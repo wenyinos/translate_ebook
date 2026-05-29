@@ -123,14 +123,15 @@ def validate_config(config: dict) -> bool:
     return True
 
 
-def setup_logging(log_file: str = None):
+def setup_logging(log_file: str = None, debug: bool = False):
     """配置日志系统"""
     handlers = [logging.StreamHandler()]
     if log_file:
         handlers.append(logging.FileHandler(log_file, encoding='utf-8'))
 
+    level = logging.DEBUG if debug else logging.INFO
     logging.basicConfig(
-        level=logging.INFO,
+        level=level,
         format='%(asctime)s - %(levelname)s - %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S',
         handlers=handlers
@@ -230,12 +231,13 @@ def main():
                         choices=list(SUPPORTED_LANGUAGES.keys()),
                         help=f'Target language (default: {DEFAULT_TARGET_LANG})')
     parser.add_argument('--log', help='Log file path')
+    parser.add_argument('--debug', action='store_true', help='Enable DEBUG logging')
     parser.add_argument('--cache', help='Translation cache file path')
 
     args = parser.parse_args()
 
     # 配置日志
-    setup_logging(args.log)
+    setup_logging(args.log, args.debug)
     logger.info(f"Start: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
     config = DEFAULT_CONFIG.copy()

@@ -1,10 +1,13 @@
 """格式转换模块 - MOBI/AZW3/PDF 转 EPUB"""
 
+import logging
 import os
 import platform
 import subprocess
 import tempfile
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 # 支持转换的格式
@@ -107,12 +110,22 @@ def convert_to_epub(input_path: str, output_path: str = None) -> str:
     if output_path is None:
         output_path = str(Path(input_path).with_suffix('.epub'))
 
-    # 执行转换（不捕获输出，让用户看到 calibre 进度）
+    # 执行转换
     cmd = ['ebook-convert', input_path, output_path]
+    logger.debug(f"Running: {' '.join(cmd)}")
 
     try:
-        result = subprocess.run(cmd, text=True, timeout=300)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        # 输出 calibre 日志到 DEBUG
+        if result.stdout:
+            for line in result.stdout.strip().split('\n'):
+                logger.debug(f"calibre: {line}")
+        if result.stderr:
+            for line in result.stderr.strip().split('\n'):
+                logger.debug(f"calibre: {line}")
+
         if result.returncode != 0:
+            logger.error(f"calibre exit code: {result.returncode}")
             raise ValueError(f"Conversion failed with exit code {result.returncode}")
         return output_path
     except subprocess.TimeoutExpired:
