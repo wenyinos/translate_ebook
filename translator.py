@@ -295,8 +295,16 @@ def format_time(seconds: float) -> str:
 
 
 def get_progress_path(output_path: str) -> str:
-    """获取进度文件路径"""
-    return output_path + ".progress.json"
+    """获取进度文件路径（写入项目根目录 cache/ 下）"""
+    # 获取项目根目录
+    project_root = Path(__file__).parent
+    cache_dir = project_root / "cache"
+    cache_dir.mkdir(exist_ok=True)
+
+    # 使用输出文件名作为进度文件名
+    output_name = Path(output_path).name
+    progress_path = cache_dir / f"{output_name}.progress.json"
+    return str(progress_path)
 
 
 def save_progress(output_path: str, results, total: int):

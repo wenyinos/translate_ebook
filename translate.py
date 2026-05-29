@@ -232,8 +232,8 @@ def translate_single_file(input_path: str, output_path: str, client,
         return False
 
     finally:
-        # 清理临时文件
-        if temp_epub and os.path.exists(temp_epub):
+        # 清理临时文件（仅当 temp_epub 不是最终输出文件时）
+        if temp_epub and os.path.exists(temp_epub) and temp_epub != output_path:
             os.remove(temp_epub)
 
 
