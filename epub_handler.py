@@ -80,6 +80,7 @@ def translate_epub(input_path: str, output_path: str, client, model: str,
                    batch_size: int = 50, resume: bool = False,
                    token_stats: Optional[TokenStats] = None,
                    target_lang: str = DEFAULT_TARGET_LANG,
+                   max_tokens: int = 128000,
                    key_manager: Optional[KeyManager] = None,
                    cache: Optional[TranslationCache] = None):
     """翻译 EPUB 文件，保留原始 HTML 结构"""
@@ -121,6 +122,7 @@ def translate_epub(input_path: str, output_path: str, client, model: str,
             continue
 
         translated_text = translate_text(client, text, model, target_lang,
+                                         max_tokens=max_tokens,
                                          token_stats=token_stats, key_manager=key_manager,
                                          cache=cache)
         new_html = replace_html_text(html_content, translated_text)

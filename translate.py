@@ -86,6 +86,7 @@ DEFAULT_CONFIG = {
     "max_retries": int(os.environ.get("TRANSLATE_MAX_RETRIES", "3")),
     "retry_delay": float(os.environ.get("TRANSLATE_RETRY_DELAY", "1.0")),
     "output_dir": os.environ.get("TRANSLATE_OUTPUT_DIR", str(Path(__file__).parent / "translated_books")),
+    "max_tokens": int(os.environ.get("TRANSLATE_MAX_TOKENS", "128000")),
 }
 
 SUPPORTED_EXTENSIONS = {'.docx', '.epub'} | CONVERTIBLE_FORMATS
@@ -208,6 +209,7 @@ def translate_single_file(input_path: str, output_path: str, client,
                 config["model"], config["batch_size"],
                 resume=args.resume, token_stats=token_stats,
                 target_lang=config["target_lang"],
+                max_tokens=config["max_tokens"],
                 key_manager=key_manager, cache=cache
             )
         elif file_ext == '.epub':
@@ -216,6 +218,7 @@ def translate_single_file(input_path: str, output_path: str, client,
                 config["model"], config["batch_size"],
                 resume=args.resume, token_stats=token_stats,
                 target_lang=config["target_lang"],
+                max_tokens=config["max_tokens"],
                 key_manager=key_manager, cache=cache
             )
         else:
@@ -247,6 +250,7 @@ def main():
     parser.add_argument('--batch-size', type=int, help='Batch size')
     parser.add_argument('--max-retries', type=int, help='Max retry attempts')
     parser.add_argument('--retry-delay', type=float, help='Retry delay (seconds)')
+    parser.add_argument('--max-tokens', type=int, help='Max tokens for API response')
     parser.add_argument('--resume', action='store_true', help='Resume from checkpoint')
     parser.add_argument('--target-lang', default=DEFAULT_TARGET_LANG,
                         choices=list(SUPPORTED_LANGUAGES.keys()),
@@ -277,6 +281,8 @@ def main():
         config["max_retries"] = args.max_retries
     if args.retry_delay:
         config["retry_delay"] = args.retry_delay
+    if args.max_tokens:
+        config["max_tokens"] = args.max_tokens
     if args.output_dir:
         config["output_dir"] = args.output_dir
     if args.target_lang != DEFAULT_TARGET_LANG:
@@ -327,12 +333,13 @@ def main():
         logger.info(f"[{i}/{len(input_files)}] Processing: {Path(input_path).name}")
         logger.info(f"Elapsed: {format_time(elapsed_total)} | Remaining files: {len(input_files) - i}")
 
-        # 确定输出路径
+        # 确定输出路径（按语言分目录）
         if args.output and len(input_files) == 1:
             output_path = args.output
         else:
             input_name = Path(input_path).name
-            output_path = str(Path(config["output_dir"]) / input_name)
+            lang_dir = Path(config["output_dir"]) / config["target_lang"]
+            output_path = str(lang_dir / input_name)
 
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
 

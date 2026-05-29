@@ -35,6 +35,7 @@ input               Input file, directory, or glob pattern (required)
 --batch-size        Batch size (default: 50)
 --max-retries       Max retry attempts (default: 3)
 --retry-delay       Retry delay seconds (default: 1.0)
+--max-tokens        Max tokens for API response (default: 128000)
 --log               Log file path (optional)
 --debug             Enable DEBUG logging (verbose output)
 ```
@@ -60,6 +61,7 @@ TRANSLATE_BATCH_SIZE=50
 TRANSLATE_MAX_RETRIES=3
 TRANSLATE_RETRY_DELAY=1.0
 TRANSLATE_OUTPUT_DIR=~/translated_books
+TRANSLATE_MAX_TOKENS=128000
 ```
 
 ## Rate Limiting Behavior

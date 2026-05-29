@@ -174,6 +174,7 @@ class TokenStats:
 def translate_text(client: openai.OpenAI, text: str, model: str,
                    target_lang: str = DEFAULT_TARGET_LANG,
                    max_retries: int = 3, retry_delay: float = 1.0,
+                   max_tokens: int = 128000,
                    token_stats: Optional[TokenStats] = None,
                    key_manager: Optional[KeyManager] = None,
                    cache: Optional[TranslationCache] = None) -> str:
@@ -204,11 +205,18 @@ Original text:
 
     system_msg = f"You are a professional technical document translator, skilled at translating English technical documents to {lang_name}."
 
-    for attempt in range(max_retries):
+    # 追踪失败次数
+    consecutive_failures = 0
+    # 计算总尝试次数：max_retries * key_count（每个 key 重试 max_retries 次）
+    key_count = key_manager.key_count if key_manager else 1
+    total_attempts = max_retries * key_count
+
+    for attempt in range(total_attempts):
         try:
             # 如果有 key_manager，使用轮换的客户端和模型
             if key_manager:
                 current_client, current_model = key_manager.get_client_and_model()
+                current_key_idx = key_manager._current_key_idx
             else:
                 current_client, current_model = client, model
 
@@ -219,8 +227,11 @@ Original text:
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.3,
-                max_tokens=4096
+                max_tokens=max_tokens
             )
+
+            # 成功，重置失败计数
+            consecutive_failures = 0
 
             # 统计 token
             if token_stats and response.usage:
@@ -239,25 +250,37 @@ Original text:
 
             return translated
         except openai.RateLimitError as e:
-            # 429 Rate Limit Error - 轮换 key 并延长等待时间
+            consecutive_failures += 1
             if key_manager and key_manager.key_count > 1:
-                key_manager.rotate_key()
-                wait_time = 60 * (attempt + 1)  # 60s, 120s, 180s
-                print(f"  Rate limited, waiting {wait_time:.0f}s before retry...")
+                # 检查是否完成一轮（尝试次数是 key_count 的倍数）
+                cycle_complete = (consecutive_failures % key_count == 0)
+                if cycle_complete:
+                    # 完成一轮，回到第一个 key 并延长等待
+                    key_manager._current_key_idx = 0
+                    cycle_num = consecutive_failures // key_count
+                    wait_time = 120 * cycle_num  # 120s, 240s, 360s...
+                    print(f"  Cycle {cycle_num} complete, resetting to key 1, waiting {wait_time:.0f}s...")
+                else:
+                    # 轮换到下一个 key
+                    key_manager.rotate_key()
+                    wait_time = 60 * consecutive_failures  # 60s, 120s, 180s
+                    print(f"  Rate limited (key {current_key_idx + 1}), switched to key {key_manager._current_key_idx + 1}, waiting {wait_time:.0f}s...")
                 time.sleep(wait_time)
-            elif attempt < max_retries - 1:
+            elif attempt < total_attempts - 1:
                 wait_time = 60 * (attempt + 1)
                 print(f"  Rate limited, waiting {wait_time:.0f}s...")
                 time.sleep(wait_time)
             else:
-                print(f"  Rate limited, skipping: {e}")
+                print(f"  Rate limited after {total_attempts} attempts, skipping: {e}")
                 return text
         except Exception as e:
-            if attempt < max_retries - 1:
-                print(f"  Translation failed, retry {attempt + 1}/{max_retries}: {e}")
-                time.sleep(15)
+            consecutive_failures += 1
+            if attempt < total_attempts - 1:
+                wait_time = min(15 * consecutive_failures, 60)  # 15s, 30s, 45s, 60s max
+                print(f"  Translation failed, retry {attempt + 1}/{total_attempts} (waiting {wait_time:.0f}s): {e}")
+                time.sleep(wait_time)
             else:
-                print(f"  Translation failed, skipping: {e}")
+                print(f"  Translation failed after {total_attempts} attempts, skipping: {e}")
                 return text
 
 
@@ -311,6 +334,7 @@ def clear_progress(output_path: str):
 def translate_batch(client: openai.OpenAI, texts: List[str], model: str,
                     target_lang: str = DEFAULT_TARGET_LANG,
                     batch_size: int = 50, max_workers: int = 4,
+                    max_tokens: int = 128000,
                     output_path: Optional[str] = None,
                     resume: bool = False,
                     token_stats: Optional[TokenStats] = None,
@@ -346,6 +370,7 @@ def translate_batch(client: openai.OpenAI, texts: List[str], model: str,
     def translate_item(idx_text):
         idx, text = idx_text
         translated = translate_text(client, text, model, target_lang,
+                                    max_tokens=max_tokens,
                                     token_stats=token_stats, key_manager=key_manager,
                                     cache=cache)
         with lock:

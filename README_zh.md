@@ -35,6 +35,7 @@ input               输入文件、目录或通配符模式（必需）
 --batch-size        批量大小（默认: 50）
 --max-retries       最大重试次数（默认: 3）
 --retry-delay       重试延迟秒数（默认: 1.0）
+--max-tokens        API 响应最大 token 数（默认: 128000）
 --log               日志文件路径（可选）
 --debug             启用 DEBUG 日志（详细输出）
 ```
@@ -60,6 +61,7 @@ TRANSLATE_BATCH_SIZE=50
 TRANSLATE_MAX_RETRIES=3
 TRANSLATE_RETRY_DELAY=1.0
 TRANSLATE_OUTPUT_DIR=~/translated_books
+TRANSLATE_MAX_TOKENS=128000
 ```
 
 ## 限流行为

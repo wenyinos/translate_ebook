@@ -37,6 +37,7 @@ def translate_docx(input_path: str, output_path: str, client, model: str,
                    batch_size: int = 50, resume: bool = False,
                    token_stats: Optional[TokenStats] = None,
                    target_lang: str = DEFAULT_TARGET_LANG,
+                   max_tokens: int = 128000,
                    key_manager: Optional[KeyManager] = None,
                    cache: Optional[TranslationCache] = None):
     """翻译 DOCX 文件，保留样式、内联格式和表格"""
@@ -67,6 +68,7 @@ def translate_docx(input_path: str, output_path: str, client, model: str,
     # 批量翻译
     texts = [t[1] for t in all_texts]
     translated_texts = translate_batch(client, texts, model, batch_size,
+                                       max_tokens=max_tokens,
                                        output_path=output_path, resume=resume,
                                        token_stats=token_stats,
                                        target_lang=target_lang,
