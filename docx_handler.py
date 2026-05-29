@@ -2,7 +2,7 @@
 
 from typing import Optional
 from docx import Document
-from translator import translate_batch, format_time, TokenStats
+from translator import translate_batch, TokenStats, KeyManager, DEFAULT_TARGET_LANG
 
 
 def copy_run_format(src_run, dst_run):
@@ -34,13 +34,15 @@ def copy_paragraph_format(src_para, dst_para):
 
 def translate_docx(input_path: str, output_path: str, client, model: str,
                    batch_size: int = 50, resume: bool = False,
-                   token_stats: Optional[TokenStats] = None):
+                   token_stats: Optional[TokenStats] = None,
+                   target_lang: str = DEFAULT_TARGET_LANG,
+                   key_manager: Optional[KeyManager] = None):
     """翻译 DOCX 文件，保留样式和内联格式"""
-    print(f"\n处理 DOCX: {input_path}")
+    print(f"\nProcessing DOCX: {input_path}")
 
     src_doc = Document(input_path)
     total_paragraphs = len(src_doc.paragraphs)
-    print(f"  总段落数: {total_paragraphs}")
+    print(f"  Total paragraphs: {total_paragraphs}")
 
     paragraphs_to_translate = []
     for i, para in enumerate(src_doc.paragraphs):
@@ -48,12 +50,14 @@ def translate_docx(input_path: str, output_path: str, client, model: str,
             paragraphs_to_translate.append((i, para.text))
 
     total_to_translate = len(paragraphs_to_translate)
-    print(f"  非空段落数: {total_to_translate}")
+    print(f"  Non-empty paragraphs: {total_to_translate}")
 
     texts = [p[1] for p in paragraphs_to_translate]
     translated_texts = translate_batch(client, texts, model, batch_size,
                                        output_path=output_path, resume=resume,
-                                       token_stats=token_stats)
+                                       token_stats=token_stats,
+                                       target_lang=target_lang,
+                                       key_manager=key_manager)
 
     dst_doc = Document()
 
@@ -75,6 +79,4 @@ def translate_docx(input_path: str, output_path: str, client, model: str,
         copy_paragraph_format(para, new_para)
 
     dst_doc.save(output_path)
-    total_time = time.time() - start_time
-    print(f"  翻译完成: {output_path}")
-    print(f"  总耗时: {format_time(total_time)}")
+    print(f"  Translation complete: {output_path}")

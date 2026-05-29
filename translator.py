@@ -1,12 +1,84 @@
-"""翻译核心逻辑 - API 调用、批量处理、断点续传、Token 统计"""
+"""翻译核心逻辑 - API 调用、批量处理、断点续传、Token 统计、Key 轮换"""
 
 import json
+import random
 import time
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict, Optional
 from pathlib import Path
 import openai
+
+
+class KeyManager:
+    """API Key 和模型轮换管理器"""
+
+    def __init__(self, api_keys: List[str], models: List[str],
+                 base_url: str = "https://api.openai.com/v1"):
+        self.api_keys = api_keys
+        self.models = models
+        self.base_url = base_url
+        self._current_key_idx = 0
+        self._current_model_idx = 0
+        self._lock = threading.Lock()
+        self._clients: Dict[str, openai.OpenAI] = {}
+
+    def get_client_and_model(self) -> tuple[openai.OpenAI, str]:
+        """获取当前的客户端和模型（线程安全）"""
+        with self._lock:
+            api_key = self.api_keys[self._current_key_idx]
+            model = self.models[self._current_model_idx]
+
+            # 缓存客户端
+            if api_key not in self._clients:
+                self._clients[api_key] = openai.OpenAI(
+                    api_key=api_key,
+                    base_url=self.base_url
+                )
+
+            return self._clients[api_key], model
+
+    def rotate_key(self):
+        """轮换到下一个 API Key"""
+        with self._lock:
+            self._current_key_idx = (self._current_key_idx + 1) % len(self.api_keys)
+            key_preview = self.api_keys[self._current_key_idx][:8] + "..."
+            print(f"  Switched to API key: {key_preview}")
+
+    def rotate_model(self):
+        """轮换到下一个模型"""
+        with self._lock:
+            self._current_model_idx = (self._current_model_idx + 1) % len(self.models)
+            print(f"  Switched to model: {self.models[self._current_model_idx]}")
+
+    def get_current_key_preview(self) -> str:
+        """获取当前 key 的预览"""
+        return self.api_keys[self._current_key_idx][:8] + "..."
+
+    @property
+    def key_count(self) -> int:
+        return len(self.api_keys)
+
+    @property
+    def model_count(self) -> int:
+        return len(self.models)
+
+
+# 支持的语言配置
+SUPPORTED_LANGUAGES = {
+    "zh": "简体中文",
+    "en": "English",
+    "ja": "日本語",
+    "ko": "한국어",
+    "fr": "Français",
+    "de": "Deutsch",
+    "es": "Español",
+    "ru": "Русский",
+    "pt": "Português",
+    "it": "Italiano",
+}
+
+DEFAULT_TARGET_LANG = "zh"
 
 
 class TokenStats:
@@ -45,8 +117,10 @@ class TokenStats:
 
 
 def translate_text(client: openai.OpenAI, text: str, model: str,
+                   target_lang: str = DEFAULT_TARGET_LANG,
                    max_retries: int = 3, retry_delay: float = 1.0,
-                   token_stats: Optional[TokenStats] = None) -> str:
+                   token_stats: Optional[TokenStats] = None,
+                   key_manager: Optional[KeyManager] = None) -> str:
     """使用 OpenAI API 翻译文本"""
     if not text.strip():
         return text
@@ -54,22 +128,32 @@ def translate_text(client: openai.OpenAI, text: str, model: str,
     if text.strip().isdigit() or len(text.strip()) <= 2:
         return text
 
-    prompt = f"""请将以下英文文本翻译为简体中文。
-要求：
-1. 保持原文格式和排版
-2. 技术术语准确（如 SoC、CPU、GPU、API 等保留原文或使用通用译法）
-3. 章节编号保持不变
-4. 只输出翻译结果，不要添加解释
+    lang_name = SUPPORTED_LANGUAGES.get(target_lang, target_lang)
 
-原文：
+    prompt = f"""Please translate the following English text to {lang_name}.
+Requirements:
+1. Preserve the original formatting and layout
+2. Keep technical terms accurate (e.g., SoC, CPU, GPU, API should be kept in original or use common translations)
+3. Keep chapter numbers unchanged
+4. Output only the translation, no explanations
+
+Original text:
 {text}"""
+
+    system_msg = f"You are a professional technical document translator, skilled at translating English technical documents to {lang_name}."
 
     for attempt in range(max_retries):
         try:
-            response = client.chat.completions.create(
-                model=model,
+            # 如果有 key_manager，使用轮换的客户端和模型
+            if key_manager:
+                current_client, current_model = key_manager.get_client_and_model()
+            else:
+                current_client, current_model = client, model
+
+            response = current_client.chat.completions.create(
+                model=current_model,
                 messages=[
-                    {"role": "system", "content": "你是一个专业的技术文档翻译员，擅长将英文技术文档翻译为简体中文。"},
+                    {"role": "system", "content": system_msg},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.3,
@@ -78,16 +162,34 @@ def translate_text(client: openai.OpenAI, text: str, model: str,
 
             # 统计 token
             if token_stats and response.usage:
-                token_stats.add(response.usage, model)
+                token_stats.add(response.usage, current_model)
+
+            # 请求间隔（15-60秒随机延迟，避免触发风控）
+            delay = random.uniform(15, 60)
+            time.sleep(delay)
 
             result = response.choices[0].message.content
             return result.strip() if result else text
+        except openai.RateLimitError as e:
+            # 429 Rate Limit Error - 轮换 key 并延长等待时间
+            if key_manager and key_manager.key_count > 1:
+                key_manager.rotate_key()
+                wait_time = 60 * (attempt + 1)  # 60s, 120s, 180s
+                print(f"  Rate limited, waiting {wait_time:.0f}s before retry...")
+                time.sleep(wait_time)
+            elif attempt < max_retries - 1:
+                wait_time = 60 * (attempt + 1)
+                print(f"  Rate limited, waiting {wait_time:.0f}s...")
+                time.sleep(wait_time)
+            else:
+                print(f"  Rate limited, skipping: {e}")
+                return text
         except Exception as e:
             if attempt < max_retries - 1:
-                print(f"  翻译失败，重试 {attempt + 1}/{max_retries}: {e}")
-                time.sleep(retry_delay)
+                print(f"  Translation failed, retry {attempt + 1}/{max_retries}: {e}")
+                time.sleep(15)
             else:
-                print(f"  翻译失败，跳过: {e}")
+                print(f"  Translation failed, skipping: {e}")
                 return text
 
 
@@ -139,10 +241,12 @@ def clear_progress(output_path: str):
 
 
 def translate_batch(client: openai.OpenAI, texts: List[str], model: str,
+                    target_lang: str = DEFAULT_TARGET_LANG,
                     batch_size: int = 50, max_workers: int = 4,
                     output_path: Optional[str] = None,
                     resume: bool = False,
-                    token_stats: Optional[TokenStats] = None) -> List[str]:
+                    token_stats: Optional[TokenStats] = None,
+                    key_manager: Optional[KeyManager] = None) -> List[str]:
     """批量翻译文本（支持并行、断点续传）"""
     total = len(texts)
     results = [None] * total
@@ -172,7 +276,8 @@ def translate_batch(client: openai.OpenAI, texts: List[str], model: str,
 
     def translate_item(idx_text):
         idx, text = idx_text
-        translated = translate_text(client, text, model, token_stats=token_stats)
+        translated = translate_text(client, text, model, target_lang,
+                                    token_stats=token_stats, key_manager=key_manager)
         with lock:
             nonlocal completed
             completed += 1

@@ -6,7 +6,7 @@ from typing import Optional
 import ebooklib
 from ebooklib import epub
 from bs4 import BeautifulSoup
-from translator import translate_text, format_time, TokenStats, get_progress_path, load_progress, save_progress, clear_progress
+from translator import translate_text, format_time, TokenStats, KeyManager, DEFAULT_TARGET_LANG, get_progress_path, load_progress, save_progress, clear_progress
 
 
 def extract_text_from_html(html_content: str) -> str:
@@ -50,9 +50,11 @@ def replace_html_text(html_content: str, translated_text: str) -> str:
 
 def translate_epub(input_path: str, output_path: str, client, model: str,
                    batch_size: int = 50, resume: bool = False,
-                   token_stats: Optional[TokenStats] = None):
+                   token_stats: Optional[TokenStats] = None,
+                   target_lang: str = DEFAULT_TARGET_LANG,
+                   key_manager: Optional[KeyManager] = None):
     """翻译 EPUB 文件，保留原始 HTML 结构"""
-    print(f"\n处理 EPUB: {input_path}")
+    print(f"\nProcessing EPUB: {input_path}")
 
     book = epub.read_epub(input_path)
     items = list(book.get_items_of_type(ebooklib.ITEM_DOCUMENT))
@@ -92,7 +94,8 @@ def translate_epub(input_path: str, output_path: str, client, model: str,
             completed_items[idx] = html_content
             continue
 
-        translated_text = translate_text(client, text, model, token_stats=token_stats)
+        translated_text = translate_text(client, text, model, target_lang,
+                                         token_stats=token_stats, key_manager=key_manager)
         new_html = replace_html_text(html_content, translated_text)
         item.set_content(new_html.encode('utf-8'))
         completed_items[idx] = new_html

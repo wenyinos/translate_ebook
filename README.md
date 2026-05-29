@@ -1,132 +1,90 @@
-# Ebook Translator
+# Ebook Translator CLI Tool
 
-Translate English technical documents to Simplified Chinese using OpenAI-compatible endpoints. Supports .docx and .epub formats.
-
-## Features
-
-- **DOCX Translation**: Preserve paragraph structure and inline formatting
-- **EPUB Translation**: Maintain original HTML structure
-- **Parallel Processing**: Multi-threaded translation for faster execution
-- **Resume Support**: Continue from where you left off if interrupted
-- **Token Statistics**: Track API usage and estimated costs
+CLI tool for translating English technical documents (.docx/.epub) to any language using OpenAI-compatible API.
 
 ## Quick Start
-
-### 1. Setup Environment
 ```bash
 ./setup_venv.sh
-```
-
-### 2. Configure API Key
-Edit `config.env`:
-```bash
-nano config.env
-```
-
-Add your API credentials:
-```
-OPENAI_API_KEY=your_api_key_here
-OPENAI_BASE_URL=https://api.openai.com/v1
-OPENAI_MODEL=gpt-4o-mini
-```
-
-### 3. Run Translation
-```bash
-# Using the shortcut script (auto-activates venv)
-./run.sh book.docx
-
-# Or manually activate and run
 source venv/bin/activate
+nano config.env  # Set OPENAI_API_KEY
 python translate.py book.docx
 ```
 
-## Usage
-
-### Basic Usage
+## Usage Pattern
 ```bash
+# Basic
 python translate.py <input_file> [-o <output_path>]
+
+# With options
+python translate.py <input_file> [OPTIONS]
 ```
 
-### Examples
-```bash
-# Translate DOCX file
-python translate.py document.docx
+## Command Line Arguments
+```
+input               Input file path (required)
+-o, --output        Output file path (auto-generated if not set)
+--output-dir        Output directory (default: ~/translated_books)
+--resume            Resume from last checkpoint if interrupted
+--target-lang       Target language code (default: zh)
+                    Supported: zh, en, ja, ko, fr, de, es, ru, pt, it
+--api-key           Single OpenAI API key
+--api-keys          Multiple API keys comma-separated (for rate limit rotation)
+--base-url          API base URL (default: https://api.openai.com/v1)
+--model             Model name (default: gpt-4o-mini)
+--models            Multiple models comma-separated (for rotation)
+--batch-size        Batch size (default: 50)
+--max-retries       Max retry attempts (default: 3)
+--retry-delay       Retry delay seconds (default: 1.0)
+```
 
-# Translate EPUB with custom output path
-python translate.py book.epub -o translated_book.epub
+## Configuration File (config.env)
+```bash
+# Required
+OPENAI_API_KEY=your_api_key_here
+
+# Optional - API
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_MODEL=gpt-4o-mini
+
+# Optional - Multi-key rotation (429 triggers rotation)
+OPENAI_API_KEYS=key1,key2,key3
+OPENAI_MODELS=gpt-4o-mini,gpt-4o,gpt-3.5-turbo
+
+# Optional - Translation
+TRANSLATE_TARGET_LANG=zh
+TRANSLATE_BATCH_SIZE=50
+TRANSLATE_MAX_RETRIES=3
+TRANSLATE_RETRY_DELAY=1.0
+TRANSLATE_OUTPUT_DIR=~/translated_books
+```
+
+## Rate Limiting Behavior
+- Normal request interval: 15-60 seconds random
+- 429 Rate Limit: rotate to next API key, wait 60/120/180 seconds (linear backoff)
+- Other errors: retry after 15 seconds
+
+## Examples
+```bash
+# Translate to Chinese (default)
+python translate.py book.docx
+
+# Translate to Japanese
+python translate.py book.docx --target-lang ja
+
+# Translate with multiple API keys
+python translate.py book.docx --api-keys "key1,key2,key3"
 
 # Resume interrupted translation
-python translate.py book.docx --resume
-
-# Use custom configuration
-python translate.py document.docx \
-    --api-key "your_key" \
-    --model "gpt-4o" \
-    --batch-size 100
+python translate.py book.epub --resume
 ```
 
-### Command Line Options
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `input` | Input file path | Required |
-| `-o, --output` | Output file path | Auto-generated |
-| `--output-dir` | Output directory | `~/translated_books` |
-| `--resume` | Resume from last checkpoint | `false` |
-| `--api-key` | OpenAI API Key | From environment |
-| `--base-url` | API base URL | `https://api.openai.com/v1` |
-| `--model` | Model name | `gpt-4o-mini` |
-| `--batch-size` | Batch size for translation | `50` |
-| `--max-retries` | Maximum retry attempts | `3` |
-| `--retry-delay` | Retry delay (seconds) | `1.0` |
-
-## Configuration
-
-### Environment Variables
-```bash
-export OPENAI_API_KEY="your_api_key"
-export OPENAI_BASE_URL="https://api.openai.com/v1"
-export OPENAI_MODEL="gpt-4o-mini"
-export TRANSLATE_BATCH_SIZE=50
-export TRANSLATE_MAX_RETRIES=3
-export TRANSLATE_RETRY_DELAY=1.0
-export TRANSLATE_OUTPUT_DIR=~/translated_books
-```
-
-### Config File
-Copy `config.env.example` to `config.env` and fill in your settings.
+## File Structure
+- `translate.py` - CLI entry point, argument parsing
+- `translator.py` - Core translation logic, API calls, key rotation, token stats
+- `docx_handler.py` - DOCX processing, preserves formatting
+- `epub_handler.py` - EPUB processing, preserves HTML structure
+- `config.env.example` - Configuration template
+- `requirements.txt` - Python dependencies
 
 ## Dependencies
-- Python 3.8+
-- python-docx: DOCX file handling
-- ebooklib: EPUB file handling
-- beautifulsoup4: HTML parsing
-- openai: OpenAI API client
-
-Install dependencies:
-```bash
-pip install -r requirements.txt
-```
-
-## Project Structure
-```
-translate_ebook/
-├── translate.py          # CLI entry point
-├── translator.py         # Core translation logic
-├── docx_handler.py       # DOCX file processing
-├── epub_handler.py       # EPUB file processing
-├── setup_venv.sh         # Virtual environment setup
-├── run.sh                # Quick run script
-├── requirements.txt      # Python dependencies
-├── config.env            # Configuration (not in Git)
-├── config.env.example    # Configuration template
-├── CLAUDE.md             # Claude Code guidelines
-├── README.md             # English documentation
-└── README_zh.md          # Chinese documentation
-```
-
-## Notes
-1. Ensure sufficient API quota
-2. Large files may take a while to translate
-3. Output is saved to `~/translated_books` by default
-4. Technical terms are preserved or use common translations
-5. Progress files (`.progress.json`) are created during translation and removed on completion
+python-docx, ebooklib, beautifulsoup4, openai
