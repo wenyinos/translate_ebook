@@ -55,9 +55,29 @@ def load_env_file(env_path: str = None):
 load_env_file()
 
 
+def collect_api_keys() -> List[str]:
+    """收集所有 API Key（支持单个和多个独立变量）"""
+    keys = []
+    # 收集 OPENAI_API_KEY_1, OPENAI_API_KEY_2, ... 格式
+    for i in range(1, 100):
+        key = os.environ.get(f"OPENAI_API_KEY_{i}", "")
+        if key:
+            keys.append(key)
+    # 如果没有找到编号 key，尝试 OPENAI_API_KEY
+    if not keys:
+        key = os.environ.get("OPENAI_API_KEY", "")
+        if key:
+            keys.append(key)
+    # 尝试逗号分隔的 OPENAI_API_KEYS
+    if not keys:
+        keys_str = os.environ.get("OPENAI_API_KEYS", "")
+        if keys_str:
+            keys = [k.strip() for k in keys_str.split(",") if k.strip()]
+    return keys
+
+
 DEFAULT_CONFIG = {
-    "api_key": os.environ.get("OPENAI_API_KEY", ""),
-    "api_keys": os.environ.get("OPENAI_API_KEYS", ""),
+    "api_keys_list": collect_api_keys(),
     "base_url": os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1"),
     "model": os.environ.get("OPENAI_MODEL", "gpt-4o-mini"),
     "models": os.environ.get("OPENAI_MODELS", ""),
@@ -88,8 +108,9 @@ def validate_config(config: dict) -> bool:
     errors = []
 
     # 验证 API Key
-    if not config.get("api_key") and not config.get("api_keys"):
-        errors.append("OPENAI_API_KEY or --api-key/--api-keys required")
+    api_keys_list = config.get("api_keys_list", [])
+    if not api_keys_list:
+        errors.append("OPENAI_API_KEY_1 or --api-key required")
 
     # 验证 base_url
     base_url = config.get("base_url", "")
@@ -241,10 +262,9 @@ def main():
     logger.info(f"Start: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
     config = DEFAULT_CONFIG.copy()
+    # 命令行 --api-key 添加到列表开头
     if args.api_key:
-        config["api_key"] = args.api_key
-    if args.api_keys:
-        config["api_keys"] = args.api_keys
+        config["api_keys_list"] = [args.api_key] + config["api_keys_list"]
     if args.base_url:
         config["base_url"] = args.base_url
     if args.model:
@@ -262,17 +282,13 @@ def main():
     if args.target_lang != DEFAULT_TARGET_LANG:
         config["target_lang"] = args.target_lang
 
-    # 解析多 key 和模型列表
-    api_keys = [k.strip() for k in config["api_keys"].split(",") if k.strip()] if config["api_keys"] else []
+    # 使用 collect_api_keys() 已收集的 keys
+    api_keys = config["api_keys_list"]
     models = [m.strip() for m in config["models"].split(",") if m.strip()] if config["models"] else []
-
-    if not api_keys and config["api_key"]:
-        api_keys = [config["api_key"]]
     if not models and config["model"]:
         models = [config["model"]]
 
     # 验证配置
-    config["api_keys_list"] = api_keys
     config["models_list"] = models
     if not validate_config(config):
         sys.exit(1)

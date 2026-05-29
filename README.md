@@ -49,7 +49,9 @@ OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=gpt-4o-mini
 
 # Optional - Multi-key rotation (429 triggers rotation)
-OPENAI_API_KEYS=key1,key2,key3
+OPENAI_API_KEY_1=your_first_key
+OPENAI_API_KEY_2=your_second_key
+OPENAI_API_KEY_3=your_third_key
 OPENAI_MODELS=gpt-4o-mini,gpt-4o,gpt-3.5-turbo
 
 # Optional - Translation
