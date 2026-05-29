@@ -177,6 +177,34 @@ def translate_epub(input_path: str, output_path: str, client, model: str,
         if hasattr(item, 'uid') and item.uid is None:
             item.uid = f'navpoint-{i + 1}'
 
+    # 确保 spine 包含所有文档项目
+    if not book.spine:
+        book.spine = ['nav']
+        for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
+            if item.get_name() != 'nav.xhtml':
+                book.spine.append(item)
+
+    # 确保 manifest 包含 nav 项目
+    nav_item = book.get_item_with_id('nav')
+    if not nav_item:
+        # 创建 nav.xhtml 如果不存在
+        nav_xhtml = epub.EpubHtml(title='Navigation', file_name='nav.xhtml', lang='en')
+        nav_xhtml.id = 'nav'  # 设置正确的 id
+        nav_xhtml.content = b'''<?xml version=\"1.0\" encoding=\"utf-8\"?>
+<!DOCTYPE html>
+<html xmlns=\"http://www.w3.org/1999/xhtml\" xmlns:epub=\"http://www.idpf.org/2007/ops\">
+<head><title>Navigation</title></head>
+<body>
+<nav epub:type=\"toc\">
+<h1>Table of Contents</h1>
+<ol>
+<li><a href=\"chap_01.xhtml\">Chapter 1</a></li>
+</ol>
+</nav>
+</body>
+</html>'''
+        book.add_item(nav_xhtml)
+
     epub.write_epub(output_path, book)
     clear_progress(output_path)
 
