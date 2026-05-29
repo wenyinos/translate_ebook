@@ -36,6 +36,7 @@ input               输入文件、目录或通配符模式（必需）
 --max-retries       最大重试次数（默认: 3）
 --retry-delay       重试延迟秒数（默认: 1.0）
 --log               日志文件路径（可选）
+--debug             启用 DEBUG 日志（详细输出）
 ```
 
 ## 配置文件 (config.env)
@@ -104,12 +105,25 @@ python translate.py book.pdf
 
 ## 依赖
 
-### Python 包
-```bash
-pip install -r requirements.txt
+### Python 版本
+- Python 3.8+
+
+### Python 包 (requirements.txt)
+```
+python-docx>=0.8.11    # DOCX 文件处理
+ebooklib>=0.17.1       # EPUB 文件处理
+beautifulsoup4>=4.11.0 # EPUB HTML 解析
+openai>=1.0.0          # OpenAI API 客户端
 ```
 
+安装: `pip install -r requirements.txt`
+
 ### 系统包（格式转换需要）
+| 包名 | 用途 | 安装命令 |
+|------|------|----------|
+| calibre | MOBI/AZW3/PDF → EPUB 转换 | `sudo dnf install calibre` |
+| poppler-utils | PDF 文本提取 (pdftotext) | `sudo dnf install poppler-utils` |
+
 ```bash
 # Fedora/RHEL
 sudo dnf install calibre poppler-utils
@@ -119,4 +133,26 @@ sudo apt install calibre poppler-utils
 
 # macOS
 brew install calibre poppler
+
+# Windows
+# 下载 calibre: https://calibre-ebook.com/download_windows
+# 下载 poppler: https://github.com/oschwartz10612/poppler-windows/releases
+# 安装后添加到 PATH 环境变量
 ```
+
+### 依赖检查
+```python
+# 代码中检查
+from converter import check_calibre, check_pdftotext
+print(f"calibre: {check_calibre()}")
+print(f"pdftotext: {check_pdftotext()}")
+```
+
+### 格式支持矩阵
+| 格式 | 直接支持 | 需要依赖 |
+|------|----------|----------|
+| .docx | 是 | python-docx |
+| .epub | 是 | ebooklib, beautifulsoup4 |
+| .mobi | 否 → EPUB | calibre |
+| .azw/.azw3 | 否 → EPUB | calibre |
+| .pdf | 否 → EPUB | calibre, poppler-utils |

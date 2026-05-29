@@ -36,6 +36,7 @@ input               Input file, directory, or glob pattern (required)
 --max-retries       Max retry attempts (default: 3)
 --retry-delay       Retry delay seconds (default: 1.0)
 --log               Log file path (optional)
+--debug             Enable DEBUG logging (verbose output)
 ```
 
 ## Configuration File (config.env)
@@ -104,12 +105,25 @@ python translate.py book.pdf
 
 ## Dependencies
 
-### Python packages
+### Python version
+- Python 3.8+
+
+### Python packages (requirements.txt)
 ```
-pip install -r requirements.txt
+python-docx>=0.8.11    # DOCX file handling
+ebooklib>=0.17.1       # EPUB file handling
+beautifulsoup4>=4.11.0 # HTML parsing for EPUB
+openai>=1.0.0          # OpenAI API client
 ```
 
-### System packages (for format conversion)
+Install: `pip install -r requirements.txt`
+
+### System packages (required for format conversion)
+| Package | Purpose | Install |
+|---------|---------|---------|
+| calibre | MOBI/AZW3/PDF → EPUB conversion | `sudo dnf install calibre` |
+| poppler-utils | PDF text extraction (pdftotext) | `sudo dnf install poppler-utils` |
+
 ```bash
 # Fedora/RHEL
 sudo dnf install calibre poppler-utils
@@ -119,4 +133,26 @@ sudo apt install calibre poppler-utils
 
 # macOS
 brew install calibre poppler
+
+# Windows
+# Download calibre: https://calibre-ebook.com/download_windows
+# Download poppler: https://github.com/oschwartz10612/poppler-windows/releases
+# Add both to PATH after installation
 ```
+
+### Dependency check
+```python
+# In code
+from converter import check_calibre, check_pdftotext
+print(f"calibre: {check_calibre()}")
+print(f"pdftotext: {check_pdftotext()}")
+```
+
+### Format support matrix
+| Format | Direct support | Requires |
+|--------|---------------|----------|
+| .docx | Yes | python-docx |
+| .epub | Yes | ebooklib, beautifulsoup4 |
+| .mobi | No → EPUB | calibre |
+| .azw/.azw3 | No → EPUB | calibre |
+| .pdf | No → EPUB | calibre, poppler-utils |
