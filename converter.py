@@ -107,23 +107,13 @@ def convert_to_epub(input_path: str, output_path: str = None) -> str:
     if output_path is None:
         output_path = str(Path(input_path).with_suffix('.epub'))
 
-    # 执行转换
+    # 执行转换（不捕获输出，让用户看到 calibre 进度）
     cmd = ['ebook-convert', input_path, output_path]
 
-    # PDF 特定选项
-    if file_ext == '.pdf':
-        cmd.extend([
-            '--pdf-no-inline-fallback',
-            '--pdf-page-margin-top', '36',
-            '--pdf-page-margin-bottom', '36',
-            '--pdf-page-margin-left', '36',
-            '--pdf-page-margin-right', '36',
-        ])
-
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        result = subprocess.run(cmd, text=True, timeout=300)
         if result.returncode != 0:
-            raise ValueError(f"Conversion failed: {result.stderr}")
+            raise ValueError(f"Conversion failed with exit code {result.returncode}")
         return output_path
     except subprocess.TimeoutExpired:
         raise ValueError("Conversion timed out (5 minutes)")

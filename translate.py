@@ -21,6 +21,40 @@ from epub_handler import translate_epub
 from converter import convert_to_epub, CONVERTIBLE_FORMATS
 
 
+def load_env_file(env_path: str = None):
+    """加载 .env 配置文件"""
+    if env_path is None:
+        # 查找当前目录下的 config.env
+        env_path = Path(__file__).parent / "config.env"
+
+    if not Path(env_path).exists():
+        return
+
+    with open(env_path, 'r', encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+            # 跳过注释和空行
+            if not line or line.startswith('#'):
+                continue
+            # 解析 KEY=VALUE
+            if '=' in line:
+                key, _, value = line.partition('=')
+                key = key.strip()
+                value = value.strip()
+                # 移除引号
+                if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
+                    value = value[1:-1]
+                # 展开 ~ 为实际路径
+                value = os.path.expanduser(value)
+                # 设置环境变量（不覆盖已存在的）
+                if key not in os.environ:
+                    os.environ[key] = value
+
+
+# 加载配置文件
+load_env_file()
+
+
 DEFAULT_CONFIG = {
     "api_key": os.environ.get("OPENAI_API_KEY", ""),
     "api_keys": os.environ.get("OPENAI_API_KEYS", ""),
@@ -31,7 +65,7 @@ DEFAULT_CONFIG = {
     "batch_size": int(os.environ.get("TRANSLATE_BATCH_SIZE", "50")),
     "max_retries": int(os.environ.get("TRANSLATE_MAX_RETRIES", "3")),
     "retry_delay": float(os.environ.get("TRANSLATE_RETRY_DELAY", "1.0")),
-    "output_dir": os.environ.get("TRANSLATE_OUTPUT_DIR", str(Path.home() / "translated_books")),
+    "output_dir": os.environ.get("TRANSLATE_OUTPUT_DIR", str(Path(__file__).parent / "translated_books")),
 }
 
 SUPPORTED_EXTENSIONS = {'.docx', '.epub'} | CONVERTIBLE_FORMATS
