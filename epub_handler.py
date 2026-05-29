@@ -10,9 +10,46 @@ from translator import translate_text, format_time, TokenStats, KeyManager, Tran
 
 
 def extract_text_from_html(html_content: str) -> str:
-    """从 HTML 提取纯文本"""
+    """从 HTML 提取纯文本（只从 body 提取）"""
     soup = BeautifulSoup(html_content, 'html.parser')
-    return soup.get_text(separator='\n', strip=True)
+    body = soup.find('body')
+    if not body:
+        return soup.get_text(separator='\n', strip=True)
+    return body.get_text(separator='\n', strip=True)
+
+
+def create_translated_html(original_html: str, translated_text: str) -> str:
+    """创建翻译后的 HTML 文档"""
+    soup = BeautifulSoup(original_html, 'html.parser')
+    body = soup.find('body')
+    if not body:
+        return original_html
+
+    # 清空 body 内容
+    body.clear()
+
+    # 按段落分割翻译后的文本
+    paragraphs = [p.strip() for p in translated_text.split('\n') if p.strip()]
+
+    # 添加翻译后的内容
+    for para_text in paragraphs:
+        # 检测是否为标题
+        if para_text.startswith(('第', '章', '节')):
+            # 可能是标题
+            if '章' in para_text[:5] or '节' in para_text[:5]:
+                h_tag = soup.new_tag('h2')
+                h_tag.string = para_text
+                body.append(h_tag)
+            else:
+                p_tag = soup.new_tag('p')
+                p_tag.string = para_text
+                body.append(p_tag)
+        else:
+            p_tag = soup.new_tag('p')
+            p_tag.string = para_text
+            body.append(p_tag)
+
+    return str(soup)
 
 
 def replace_html_text(html_content: str, translated_text: str) -> str:
@@ -83,7 +120,7 @@ def translate_epub(input_path: str, output_path: str, client, model: str,
                    max_tokens: int = 128000,
                    key_manager: Optional[KeyManager] = None,
                    cache: Optional[TranslationCache] = None):
-    """翻译 EPUB 文件，保留原始 HTML 结构"""
+    """翻译 EPUB 文件，创建新的中文文档"""
     print(f"\nProcessing EPUB: {input_path}")
 
     book = epub.read_epub(input_path)
@@ -125,13 +162,20 @@ def translate_epub(input_path: str, output_path: str, client, model: str,
                                          max_tokens=max_tokens,
                                          token_stats=token_stats, key_manager=key_manager,
                                          cache=cache)
-        new_html = replace_html_text(html_content, translated_text)
+
+        # 创建新的 HTML 文档
+        new_html = create_translated_html(html_content, translated_text)
         item.set_content(new_html.encode('utf-8'))
         completed_items[idx] = new_html
 
         # 定期保存进度
         if (idx + 1) % 5 == 0:
             save_progress(output_path, completed_items, total_items)
+
+    # 确保 toc 中的 Link 对象有 uid 属性
+    for i, item in enumerate(book.toc):
+        if hasattr(item, 'uid') and item.uid is None:
+            item.uid = f'navpoint-{i + 1}'
 
     epub.write_epub(output_path, book)
     clear_progress(output_path)
