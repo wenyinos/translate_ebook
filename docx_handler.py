@@ -3,7 +3,7 @@
 from typing import Optional, List, Tuple
 from docx import Document
 from docx.table import Table
-from translator import translate_batch, TokenStats, KeyManager, DEFAULT_TARGET_LANG
+from translator import translate_batch, TokenStats, KeyManager, TranslationCache, DEFAULT_TARGET_LANG
 
 
 def copy_run_format(src_run, dst_run):
@@ -37,7 +37,8 @@ def translate_docx(input_path: str, output_path: str, client, model: str,
                    batch_size: int = 50, resume: bool = False,
                    token_stats: Optional[TokenStats] = None,
                    target_lang: str = DEFAULT_TARGET_LANG,
-                   key_manager: Optional[KeyManager] = None):
+                   key_manager: Optional[KeyManager] = None,
+                   cache: Optional[TranslationCache] = None):
     """翻译 DOCX 文件，保留样式、内联格式和表格"""
     print(f"\nProcessing DOCX: {input_path}")
 
@@ -61,7 +62,7 @@ def translate_docx(input_path: str, output_path: str, client, model: str,
     total_paragraphs = len(src_doc.paragraphs)
     total_tables = len(src_doc.tables)
     total_to_translate = len([t for t in all_texts if t[1].strip()])
-    print(f"  Paragraphs: {total_paragraphs} | Tables: {total_tables} | To translate: {total_to_translate}")
+    print(f"  Stats: {total_paragraphs} paragraphs, {total_tables} tables, {total_to_translate} items to translate")
 
     # 批量翻译
     texts = [t[1] for t in all_texts]
@@ -69,7 +70,7 @@ def translate_docx(input_path: str, output_path: str, client, model: str,
                                        output_path=output_path, resume=resume,
                                        token_stats=token_stats,
                                        target_lang=target_lang,
-                                       key_manager=key_manager)
+                                       key_manager=key_manager, cache=cache)
 
     # 创建新文档并填充内容
     dst_doc = Document()

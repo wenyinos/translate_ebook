@@ -1,5 +1,6 @@
-"""翻译核心逻辑 - API 调用、批量处理、断点续传、Token 统计、Key 轮换"""
+"""翻译核心逻辑 - API 调用、批量处理、断点续传、Token 统计、Key 轮换、翻译记忆"""
 
+import hashlib
 import json
 import random
 import time
@@ -8,6 +9,60 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict, Optional
 from pathlib import Path
 import openai
+
+
+class TranslationCache:
+    """翻译记忆缓存"""
+
+    def __init__(self, cache_path: str = None):
+        self.cache_path = cache_path
+        self._cache: Dict[str, str] = {}
+        self._lock = threading.Lock()
+        if cache_path:
+            self.load()
+
+    def _make_key(self, text: str, target_lang: str) -> str:
+        """生成缓存键（基于文本哈希）"""
+        content = f"{text}:{target_lang}"
+        return hashlib.md5(content.encode()).hexdigest()
+
+    def get(self, text: str, target_lang: str) -> Optional[str]:
+        """获取缓存的翻译"""
+        key = self._make_key(text, target_lang)
+        with self._lock:
+            return self._cache.get(key)
+
+    def set(self, text: str, target_lang: str, translated: str):
+        """保存翻译到缓存"""
+        key = self._make_key(text, target_lang)
+        with self._lock:
+            self._cache[key] = translated
+
+    def load(self):
+        """从文件加载缓存"""
+        if not self.cache_path or not Path(self.cache_path).exists():
+            return
+        try:
+            with open(self.cache_path, 'r', encoding='utf-8') as f:
+                self._cache = json.load(f)
+            print(f"  Loaded {len(self._cache)} cached translations")
+        except Exception as e:
+            print(f"  Failed to load cache: {e}")
+
+    def save(self):
+        """保存缓存到文件"""
+        if not self.cache_path:
+            return
+        try:
+            with open(self.cache_path, 'w', encoding='utf-8') as f:
+                json.dump(self._cache, f, ensure_ascii=False, indent=2)
+            print(f"  Saved {len(self._cache)} translations to cache")
+        except Exception as e:
+            print(f"  Failed to save cache: {e}")
+
+    @property
+    def size(self) -> int:
+        return len(self._cache)
 
 
 class KeyManager:
@@ -120,13 +175,20 @@ def translate_text(client: openai.OpenAI, text: str, model: str,
                    target_lang: str = DEFAULT_TARGET_LANG,
                    max_retries: int = 3, retry_delay: float = 1.0,
                    token_stats: Optional[TokenStats] = None,
-                   key_manager: Optional[KeyManager] = None) -> str:
+                   key_manager: Optional[KeyManager] = None,
+                   cache: Optional[TranslationCache] = None) -> str:
     """使用 OpenAI API 翻译文本"""
     if not text.strip():
         return text
 
     if text.strip().isdigit() or len(text.strip()) <= 2:
         return text
+
+    # 检查缓存
+    if cache:
+        cached = cache.get(text, target_lang)
+        if cached:
+            return cached
 
     lang_name = SUPPORTED_LANGUAGES.get(target_lang, target_lang)
 
@@ -169,7 +231,13 @@ Original text:
             time.sleep(delay)
 
             result = response.choices[0].message.content
-            return result.strip() if result else text
+            translated = result.strip() if result else text
+
+            # 保存到缓存
+            if cache:
+                cache.set(text, target_lang, translated)
+
+            return translated
         except openai.RateLimitError as e:
             # 429 Rate Limit Error - 轮换 key 并延长等待时间
             if key_manager and key_manager.key_count > 1:
@@ -246,8 +314,9 @@ def translate_batch(client: openai.OpenAI, texts: List[str], model: str,
                     output_path: Optional[str] = None,
                     resume: bool = False,
                     token_stats: Optional[TokenStats] = None,
-                    key_manager: Optional[KeyManager] = None) -> List[str]:
-    """批量翻译文本（支持并行、断点续传）"""
+                    key_manager: Optional[KeyManager] = None,
+                    cache: Optional[TranslationCache] = None) -> List[str]:
+    """批量翻译文本（支持并行、断点续传、翻译记忆）"""
     total = len(texts)
     results = [None] * total
 
@@ -277,7 +346,8 @@ def translate_batch(client: openai.OpenAI, texts: List[str], model: str,
     def translate_item(idx_text):
         idx, text = idx_text
         translated = translate_text(client, text, model, target_lang,
-                                    token_stats=token_stats, key_manager=key_manager)
+                                    token_stats=token_stats, key_manager=key_manager,
+                                    cache=cache)
         with lock:
             nonlocal completed
             completed += 1

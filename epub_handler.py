@@ -6,7 +6,7 @@ from typing import Optional
 import ebooklib
 from ebooklib import epub
 from bs4 import BeautifulSoup
-from translator import translate_text, format_time, TokenStats, KeyManager, DEFAULT_TARGET_LANG, get_progress_path, load_progress, save_progress, clear_progress
+from translator import translate_text, format_time, TokenStats, KeyManager, TranslationCache, DEFAULT_TARGET_LANG, get_progress_path, load_progress, save_progress, clear_progress
 
 
 def extract_text_from_html(html_content: str) -> str:
@@ -80,40 +80,38 @@ def translate_epub(input_path: str, output_path: str, client, model: str,
                    batch_size: int = 50, resume: bool = False,
                    token_stats: Optional[TokenStats] = None,
                    target_lang: str = DEFAULT_TARGET_LANG,
-                   key_manager: Optional[KeyManager] = None):
+                   key_manager: Optional[KeyManager] = None,
+                   cache: Optional[TranslationCache] = None):
     """翻译 EPUB 文件，保留原始 HTML 结构"""
     print(f"\nProcessing EPUB: {input_path}")
 
     book = epub.read_epub(input_path)
     items = list(book.get_items_of_type(ebooklib.ITEM_DOCUMENT))
     total_items = len(items)
-    print(f"  文档项数量: {total_items}")
+    print(f"  Items: {total_items}")
 
     # 加载进度
     completed_items = {}
     if resume:
         completed_items = load_progress(output_path) or {}
         if completed_items:
-            print(f"  检测到进度文件，已翻译 {len(completed_items)}/{total_items} 项")
+            print(f"  Resumed: {len(completed_items)}/{total_items} items")
 
     start_time = time.time()
     pending_count = sum(1 for i in range(total_items) if i not in completed_items)
 
     for idx, item in enumerate(items):
         if idx in completed_items:
-            # 使用已翻译的内容
             item.set_content(completed_items[idx].encode('utf-8'))
             continue
 
         elapsed = time.time() - start_time
-        speed = (idx + 1 - (total_items - pending_count)) / elapsed if elapsed > 0 else 0
-        remaining = (pending_count - (idx - (total_items - pending_count))) / speed if speed > 0 else 0
+        processed = idx + 1 - (total_items - pending_count)
+        speed = processed / elapsed if elapsed > 0 else 0
+        remaining = (pending_count - processed) / speed if speed > 0 else 0
         percent = ((idx + 1) / total_items) * 100
 
-        print(f"  处理文档项 {idx + 1}/{total_items} ({percent:.1f}%) | "
-              f"速度: {speed:.2f}个/秒 | "
-              f"已用: {format_time(elapsed)} | "
-              f"剩余: {format_time(remaining)}")
+        print(f"  [{idx + 1}/{total_items}] {percent:.0f}% | {format_time(elapsed)} elapsed | {format_time(remaining)} remaining")
 
         html_content = item.get_content().decode('utf-8')
         text = extract_text_from_html(html_content)
@@ -123,7 +121,8 @@ def translate_epub(input_path: str, output_path: str, client, model: str,
             continue
 
         translated_text = translate_text(client, text, model, target_lang,
-                                         token_stats=token_stats, key_manager=key_manager)
+                                         token_stats=token_stats, key_manager=key_manager,
+                                         cache=cache)
         new_html = replace_html_text(html_content, translated_text)
         item.set_content(new_html.encode('utf-8'))
         completed_items[idx] = new_html
@@ -136,5 +135,4 @@ def translate_epub(input_path: str, output_path: str, client, model: str,
     clear_progress(output_path)
 
     total_time = time.time() - start_time
-    print(f"  翻译完成: {output_path}")
-    print(f"  总耗时: {format_time(total_time)}")
+    print(f"  Complete: {output_path} ({format_time(total_time)})")

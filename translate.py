@@ -15,7 +15,7 @@ from typing import List
 
 import openai
 
-from translator import TokenStats, KeyManager, SUPPORTED_LANGUAGES, DEFAULT_TARGET_LANG
+from translator import TokenStats, KeyManager, TranslationCache, SUPPORTED_LANGUAGES, DEFAULT_TARGET_LANG
 from docx_handler import translate_docx
 from epub_handler import translate_epub
 from converter import convert_to_epub, CONVERTIBLE_FORMATS
@@ -37,6 +37,56 @@ DEFAULT_CONFIG = {
 SUPPORTED_EXTENSIONS = {'.docx', '.epub'} | CONVERTIBLE_FORMATS
 
 logger = logging.getLogger(__name__)
+
+
+def format_time(seconds: float) -> str:
+    """格式化时间显示"""
+    if seconds < 60:
+        return f"{seconds:.0f}s"
+    elif seconds < 3600:
+        return f"{seconds/60:.1f}m"
+    else:
+        return f"{seconds/3600:.1f}h"
+
+
+def validate_config(config: dict) -> bool:
+    """验证配置"""
+    errors = []
+
+    # 验证 API Key
+    if not config.get("api_key") and not config.get("api_keys"):
+        errors.append("OPENAI_API_KEY or --api-key/--api-keys required")
+
+    # 验证 base_url
+    base_url = config.get("base_url", "")
+    if base_url and not base_url.startswith(("http://", "https://")):
+        errors.append(f"Invalid base URL: {base_url}")
+
+    # 验证 model
+    model = config.get("model", "")
+    if not model:
+        errors.append("Model name required")
+
+    # 验证 target_lang
+    target_lang = config.get("target_lang", DEFAULT_TARGET_LANG)
+    if target_lang not in SUPPORTED_LANGUAGES:
+        errors.append(f"Unsupported language: {target_lang}")
+
+    # 验证数值参数
+    batch_size = config.get("batch_size", 50)
+    if batch_size < 1 or batch_size > 1000:
+        errors.append(f"Invalid batch size: {batch_size}")
+
+    max_retries = config.get("max_retries", 3)
+    if max_retries < 1 or max_retries > 10:
+        errors.append(f"Invalid max retries: {max_retries}")
+
+    if errors:
+        for error in errors:
+            logger.error(f"Config error: {error}")
+        return False
+
+    return True
 
 
 def setup_logging(log_file: str = None):
@@ -80,7 +130,8 @@ def collect_input_files(input_path: str) -> List[str]:
 
 def translate_single_file(input_path: str, output_path: str, client,
                           config: dict, key_manager: KeyManager,
-                          token_stats: TokenStats, args) -> bool:
+                          token_stats: TokenStats, args,
+                          cache: TranslationCache = None) -> bool:
     """翻译单个文件"""
     file_ext = Path(input_path).suffix.lower()
     temp_epub = None
@@ -101,7 +152,7 @@ def translate_single_file(input_path: str, output_path: str, client,
                 config["model"], config["batch_size"],
                 resume=args.resume, token_stats=token_stats,
                 target_lang=config["target_lang"],
-                key_manager=key_manager
+                key_manager=key_manager, cache=cache
             )
         elif file_ext == '.epub':
             translate_epub(
@@ -109,7 +160,7 @@ def translate_single_file(input_path: str, output_path: str, client,
                 config["model"], config["batch_size"],
                 resume=args.resume, token_stats=token_stats,
                 target_lang=config["target_lang"],
-                key_manager=key_manager
+                key_manager=key_manager, cache=cache
             )
         else:
             logger.error(f"Unsupported file format: {file_ext}")
@@ -145,6 +196,7 @@ def main():
                         choices=list(SUPPORTED_LANGUAGES.keys()),
                         help=f'Target language (default: {DEFAULT_TARGET_LANG})')
     parser.add_argument('--log', help='Log file path')
+    parser.add_argument('--cache', help='Translation cache file path')
 
     args = parser.parse_args()
 
@@ -183,8 +235,10 @@ def main():
     if not models and config["model"]:
         models = [config["model"]]
 
-    if not api_keys:
-        logger.error("Please set OPENAI_API_KEY or --api-key / --api-keys")
+    # 验证配置
+    config["api_keys_list"] = api_keys
+    config["models_list"] = models
+    if not validate_config(config):
         sys.exit(1)
 
     # 收集输入文件
@@ -200,6 +254,11 @@ def main():
     client = openai.OpenAI(api_key=api_keys[0], base_url=config["base_url"])
     token_stats = TokenStats()
 
+    # 创建翻译缓存
+    cache = TranslationCache(args.cache) if args.cache else None
+    if cache:
+        logger.info(f"Translation cache: {cache.size} entries")
+
     lang_name = SUPPORTED_LANGUAGES.get(config["target_lang"], config["target_lang"])
     logger.info(f"Target language: {lang_name}")
     logger.info(f"API keys: {key_manager.key_count} | Models: {key_manager.model_count}")
@@ -207,9 +266,14 @@ def main():
     # 翻译文件
     success_count = 0
     fail_count = 0
+    start_time = datetime.now()
 
     for i, input_path in enumerate(input_files, 1):
+        file_start_time = datetime.now()
+        elapsed_total = (file_start_time - start_time).total_seconds()
+        logger.info(f"\n{'='*50}")
         logger.info(f"[{i}/{len(input_files)}] Processing: {Path(input_path).name}")
+        logger.info(f"Elapsed: {format_time(elapsed_total)} | Remaining files: {len(input_files) - i}")
 
         # 确定输出路径
         if args.output and len(input_files) == 1:
@@ -221,17 +285,27 @@ def main():
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
         if translate_single_file(input_path, output_path, client, config,
-                                 key_manager, token_stats, args):
+                                 key_manager, token_stats, args, cache):
             success_count += 1
-            logger.info(f"Complete: {output_path}")
+            file_elapsed = (datetime.now() - file_start_time).total_seconds()
+            logger.info(f"Complete: {output_path} ({format_time(file_elapsed)})")
         else:
             fail_count += 1
 
+    # 保存缓存
+    if cache:
+        cache.save()
+
     # 显示统计
+    end_time = datetime.now()
+    total_elapsed = (end_time - start_time).total_seconds()
     logger.info(f"\n{'='*50}")
     logger.info(f"Total: {len(input_files)} | Success: {success_count} | Failed: {fail_count}")
+    logger.info(f"Total time: {format_time(total_elapsed)}")
+    if cache:
+        logger.info(f"Cache: {cache.size} translations")
     logger.info(f"{token_stats.summary()}")
-    logger.info(f"End: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info(f"End: {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
 
 
 if __name__ == "__main__":
