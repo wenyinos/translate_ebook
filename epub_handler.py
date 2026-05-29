@@ -16,7 +16,7 @@ def extract_text_from_html(html_content: str) -> str:
 
 
 def replace_html_text(html_content: str, translated_text: str) -> str:
-    """替换 HTML 中的文本内容，保留原始结构"""
+    """替换 HTML 中的文本内容，保留原始标签结构和图片"""
     soup = BeautifulSoup(html_content, 'html.parser')
     body = soup.find('body')
     if not body:
@@ -25,25 +25,53 @@ def replace_html_text(html_content: str, translated_text: str) -> str:
     # 按段落分割翻译后的文本
     paragraphs = [p.strip() for p in translated_text.split('\n') if p.strip()]
 
-    # 找到 body 中所有文本节点，逐个替换
+    # 收集所有需要替换的文本节点（跳过图片和脚本）
     text_nodes = []
     for node in body.descendants:
         if isinstance(node, str) and node.strip():
+            # 跳过图片 alt 文本和脚本内容
+            parent = node.parent
+            if parent and parent.name in ('img', 'script', 'style'):
+                continue
             text_nodes.append(node)
 
-    # 替换文本节点
-    for i, node in enumerate(text_nodes):
+    # 按段落分组文本节点
+    para_groups = []
+    current_group = []
+
+    for node in text_nodes:
+        parent = node.parent
+        if parent and parent.name in ('p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'td', 'th', 'blockquote', 'caption', 'dt', 'dd'):
+            if current_group:
+                para_groups.append(current_group)
+                current_group = []
+            current_group.append(node)
+        else:
+            current_group.append(node)
+
+    if current_group:
+        para_groups.append(current_group)
+
+    # 替换每个段落组的文本
+    for i, group in enumerate(para_groups):
         if i < len(paragraphs):
-            # 清除原有内容，只保留第一个字符作为占位
-            parent = node.parent
-            if parent:
-                # 找到该节点在父元素中的位置
-                for j, child in enumerate(parent.children):
-                    if child is node:
-                        # 用新的文本替换
-                        new_text = soup.new_string(paragraphs[i] if i < len(paragraphs) else '')
-                        parent.contents[j] = new_text
-                        break
+            translated = paragraphs[i]
+
+            for j, node in enumerate(group):
+                if j == 0:
+                    parent = node.parent
+                    if parent:
+                        for k, child in enumerate(parent.contents):
+                            if child is node:
+                                parent.contents[k] = soup.new_string(translated)
+                                break
+                else:
+                    parent = node.parent
+                    if parent:
+                        for k, child in enumerate(parent.contents):
+                            if child is node:
+                                parent.contents[k] = soup.new_string('')
+                                break
 
     return str(soup)
 

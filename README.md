@@ -21,7 +21,7 @@ python translate.py <input_file> [OPTIONS]
 
 ## Command Line Arguments
 ```
-input               Input file path (required)
+input               Input file, directory, or glob pattern (required)
 -o, --output        Output file path (auto-generated if not set)
 --output-dir        Output directory (default: ~/translated_books)
 --resume            Resume from last checkpoint if interrupted
@@ -35,6 +35,7 @@ input               Input file path (required)
 --batch-size        Batch size (default: 50)
 --max-retries       Max retry attempts (default: 3)
 --retry-delay       Retry delay seconds (default: 1.0)
+--log               Log file path (optional)
 ```
 
 ## Configuration File (config.env)
@@ -65,7 +66,7 @@ TRANSLATE_OUTPUT_DIR=~/translated_books
 
 ## Examples
 ```bash
-# Translate to Chinese (default)
+# Translate single file
 python translate.py book.docx
 
 # Translate to Japanese
@@ -76,6 +77,20 @@ python translate.py book.docx --api-keys "key1,key2,key3"
 
 # Resume interrupted translation
 python translate.py book.epub --resume
+
+# Batch translate all docx in directory
+python translate.py /path/to/books/
+
+# Batch translate with glob pattern
+python translate.py "*.docx"
+
+# Translate with logging
+python translate.py book.docx --log translate.log
+
+# Supported formats (auto-converted to EPUB)
+python translate.py book.mobi
+python translate.py book.azw3
+python translate.py book.pdf
 ```
 
 ## File Structure
@@ -83,8 +98,25 @@ python translate.py book.epub --resume
 - `translator.py` - Core translation logic, API calls, key rotation, token stats
 - `docx_handler.py` - DOCX processing, preserves formatting
 - `epub_handler.py` - EPUB processing, preserves HTML structure
+- `converter.py` - Format conversion (MOBI/AZW3/PDF → EPUB)
 - `config.env.example` - Configuration template
 - `requirements.txt` - Python dependencies
 
 ## Dependencies
-python-docx, ebooklib, beautifulsoup4, openai
+
+### Python packages
+```
+pip install -r requirements.txt
+```
+
+### System packages (for format conversion)
+```bash
+# Fedora/RHEL
+sudo dnf install calibre poppler-utils
+
+# Ubuntu/Debian
+sudo apt install calibre poppler-utils
+
+# macOS
+brew install calibre poppler
+```

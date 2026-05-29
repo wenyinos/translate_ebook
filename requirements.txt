@@ -1,4 +1,13 @@
+# Python dependencies
 python-docx>=0.8.11
 ebooklib>=0.17.1
 beautifulsoup4>=4.11.0
 openai>=1.0.0
+
+# System dependencies (install separately)
+# calibre - for MOBI/AZW3/PDF to EPUB conversion
+# pdftotext - for PDF text extraction (poppler-utils)
+#
+# Fedora/RHEL: sudo dnf install calibre poppler-utils
+# Ubuntu/Debian: sudo apt install calibre poppler-utils
+# macOS: brew install calibre poppler

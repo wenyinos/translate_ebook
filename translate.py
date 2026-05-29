@@ -1,19 +1,24 @@
 #!/usr/bin/env python3
 """
 电子书翻译脚本 - 使用 OpenAI 兼容端点
-支持 .docx 和 .epub 格式
+支持 .docx .epub .mobi .azw .azw3 .pdf 格式
 """
 
+import glob
+import logging
 import os
 import sys
 import argparse
+from datetime import datetime
 from pathlib import Path
+from typing import List
 
 import openai
 
 from translator import TokenStats, KeyManager, SUPPORTED_LANGUAGES, DEFAULT_TARGET_LANG
 from docx_handler import translate_docx
 from epub_handler import translate_epub
+from converter import convert_to_epub, CONVERTIBLE_FORMATS
 
 
 DEFAULT_CONFIG = {
@@ -29,26 +34,123 @@ DEFAULT_CONFIG = {
     "output_dir": os.environ.get("TRANSLATE_OUTPUT_DIR", str(Path.home() / "translated_books")),
 }
 
+SUPPORTED_EXTENSIONS = {'.docx', '.epub'} | CONVERTIBLE_FORMATS
+
+logger = logging.getLogger(__name__)
+
+
+def setup_logging(log_file: str = None):
+    """配置日志系统"""
+    handlers = [logging.StreamHandler()]
+    if log_file:
+        handlers.append(logging.FileHandler(log_file, encoding='utf-8'))
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S',
+        handlers=handlers
+    )
+
+
+def collect_input_files(input_path: str) -> List[str]:
+    """收集输入文件（支持通配符、目录、单文件）"""
+    input_path = os.path.abspath(input_path)
+
+    # 单个文件
+    if os.path.isfile(input_path):
+        ext = Path(input_path).suffix.lower()
+        if ext in SUPPORTED_EXTENSIONS:
+            return [input_path]
+        else:
+            logger.warning(f"Unsupported format: {ext} - {input_path}")
+            return []
+
+    # 目录
+    if os.path.isdir(input_path):
+        files = []
+        for ext in SUPPORTED_EXTENSIONS:
+            files.extend(glob.glob(os.path.join(input_path, f"*{ext}")))
+        return sorted(files)
+
+    # 通配符
+    files = glob.glob(input_path)
+    return [f for f in files if Path(f).suffix.lower() in SUPPORTED_EXTENSIONS]
+
+
+def translate_single_file(input_path: str, output_path: str, client,
+                          config: dict, key_manager: KeyManager,
+                          token_stats: TokenStats, args) -> bool:
+    """翻译单个文件"""
+    file_ext = Path(input_path).suffix.lower()
+    temp_epub = None
+
+    try:
+        # 需要转换的格式
+        if file_ext in CONVERTIBLE_FORMATS:
+            logger.info(f"Converting {file_ext} to EPUB...")
+            temp_epub = str(Path(output_path).with_suffix('.epub'))
+            convert_to_epub(input_path, temp_epub)
+            input_path = temp_epub
+            file_ext = '.epub'
+            logger.info(f"Conversion complete: {temp_epub}")
+
+        if file_ext == '.docx':
+            translate_docx(
+                input_path, output_path, client,
+                config["model"], config["batch_size"],
+                resume=args.resume, token_stats=token_stats,
+                target_lang=config["target_lang"],
+                key_manager=key_manager
+            )
+        elif file_ext == '.epub':
+            translate_epub(
+                input_path, output_path, client,
+                config["model"], config["batch_size"],
+                resume=args.resume, token_stats=token_stats,
+                target_lang=config["target_lang"],
+                key_manager=key_manager
+            )
+        else:
+            logger.error(f"Unsupported file format: {file_ext}")
+            return False
+
+        return True
+
+    except Exception as e:
+        logger.error(f"Translation failed: {e}")
+        return False
+
+    finally:
+        # 清理临时文件
+        if temp_epub and os.path.exists(temp_epub):
+            os.remove(temp_epub)
+
 
 def main():
-    parser = argparse.ArgumentParser(description='电子书翻译脚本 - 使用 OpenAI 兼容端点')
-    parser.add_argument('input', help='输入文件路径')
-    parser.add_argument('-o', '--output', help='输出文件路径')
-    parser.add_argument('--output-dir', help='输出目录（默认: ~/translated_books）')
+    parser = argparse.ArgumentParser(description='Ebook Translator - OpenAI Compatible')
+    parser.add_argument('input', help='Input file, directory, or glob pattern')
+    parser.add_argument('-o', '--output', help='Output file path')
+    parser.add_argument('--output-dir', help='Output directory (default: ~/translated_books)')
     parser.add_argument('--api-key', help='OpenAI API Key')
     parser.add_argument('--api-keys', help='Multiple API keys (comma separated)')
     parser.add_argument('--base-url', help='OpenAI API Base URL')
     parser.add_argument('--model', help='Model name')
     parser.add_argument('--models', help='Multiple models (comma separated)')
-    parser.add_argument('--batch-size', type=int, help='批量翻译大小')
-    parser.add_argument('--max-retries', type=int, help='最大重试次数')
-    parser.add_argument('--retry-delay', type=float, help='重试延迟（秒）')
-    parser.add_argument('--resume', action='store_true', help='从上次中断处继续翻译')
+    parser.add_argument('--batch-size', type=int, help='Batch size')
+    parser.add_argument('--max-retries', type=int, help='Max retry attempts')
+    parser.add_argument('--retry-delay', type=float, help='Retry delay (seconds)')
+    parser.add_argument('--resume', action='store_true', help='Resume from checkpoint')
     parser.add_argument('--target-lang', default=DEFAULT_TARGET_LANG,
                         choices=list(SUPPORTED_LANGUAGES.keys()),
-                        help=f'目标语言 (默认: {DEFAULT_TARGET_LANG})')
+                        help=f'Target language (default: {DEFAULT_TARGET_LANG})')
+    parser.add_argument('--log', help='Log file path')
 
     args = parser.parse_args()
+
+    # 配置日志
+    setup_logging(args.log)
+    logger.info(f"Start: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
     config = DEFAULT_CONFIG.copy()
     if args.api_key:
@@ -76,72 +178,60 @@ def main():
     api_keys = [k.strip() for k in config["api_keys"].split(",") if k.strip()] if config["api_keys"] else []
     models = [m.strip() for m in config["models"].split(",") if m.strip()] if config["models"] else []
 
-    # 如果没有多 key，使用单个 key
     if not api_keys and config["api_key"]:
         api_keys = [config["api_key"]]
-
-    # 如果没有多模型，使用单个模型
     if not models and config["model"]:
         models = [config["model"]]
 
     if not api_keys:
-        print("Error: Please set OPENAI_API_KEY or --api-key / --api-keys")
+        logger.error("Please set OPENAI_API_KEY or --api-key / --api-keys")
         sys.exit(1)
 
-    input_path = args.input
-    if not os.path.exists(input_path):
-        print(f"错误: 输入文件不存在: {input_path}")
+    # 收集输入文件
+    input_files = collect_input_files(args.input)
+    if not input_files:
+        logger.error(f"No supported files found: {args.input}")
         sys.exit(1)
 
-    if args.output:
-        output_path = args.output
-    else:
-        input_name = Path(input_path).name
-        output_path = str(Path(config["output_dir"]) / input_name)
+    logger.info(f"Found {len(input_files)} file(s) to translate")
 
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-
-    # 创建 KeyManager（支持多 key 轮换）
+    # 创建 KeyManager
     key_manager = KeyManager(api_keys, models, config["base_url"])
-
-    # 创建默认客户端（兼容单 key 模式）
-    client = openai.OpenAI(
-        api_key=api_keys[0],
-        base_url=config["base_url"]
-    )
-
-    # 创建 token 统计器
+    client = openai.OpenAI(api_key=api_keys[0], base_url=config["base_url"])
     token_stats = TokenStats()
 
-    file_ext = Path(input_path).suffix.lower()
-
     lang_name = SUPPORTED_LANGUAGES.get(config["target_lang"], config["target_lang"])
-    print(f"Target language: {lang_name}")
-    print(f"API keys: {key_manager.key_count} | Models: {key_manager.model_count}")
+    logger.info(f"Target language: {lang_name}")
+    logger.info(f"API keys: {key_manager.key_count} | Models: {key_manager.model_count}")
 
-    if file_ext == '.docx':
-        translate_docx(
-            input_path, output_path, client,
-            config["model"], config["batch_size"],
-            resume=args.resume, token_stats=token_stats,
-            target_lang=config["target_lang"],
-            key_manager=key_manager
-        )
-    elif file_ext == '.epub':
-        translate_epub(
-            input_path, output_path, client,
-            config["model"], config["batch_size"],
-            resume=args.resume, token_stats=token_stats,
-            target_lang=config["target_lang"],
-            key_manager=key_manager
-        )
-    else:
-        print(f"错误: 不支持的文件格式: {file_ext}")
-        sys.exit(1)
+    # 翻译文件
+    success_count = 0
+    fail_count = 0
 
-    # 显示 token 统计
-    print(f"\n{token_stats.summary()}")
-    print(f"翻译完成!")
+    for i, input_path in enumerate(input_files, 1):
+        logger.info(f"[{i}/{len(input_files)}] Processing: {Path(input_path).name}")
+
+        # 确定输出路径
+        if args.output and len(input_files) == 1:
+            output_path = args.output
+        else:
+            input_name = Path(input_path).name
+            output_path = str(Path(config["output_dir"]) / input_name)
+
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+        if translate_single_file(input_path, output_path, client, config,
+                                 key_manager, token_stats, args):
+            success_count += 1
+            logger.info(f"Complete: {output_path}")
+        else:
+            fail_count += 1
+
+    # 显示统计
+    logger.info(f"\n{'='*50}")
+    logger.info(f"Total: {len(input_files)} | Success: {success_count} | Failed: {fail_count}")
+    logger.info(f"{token_stats.summary()}")
+    logger.info(f"End: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
 
 if __name__ == "__main__":

@@ -21,7 +21,7 @@ python translate.py <输入文件> [选项]
 
 ## 命令行参数
 ```
-input               输入文件路径（必需）
+input               输入文件、目录或通配符模式（必需）
 -o, --output        输出文件路径（不设置则自动生成）
 --output-dir        输出目录（默认: ~/translated_books）
 --resume            从上次中断处继续
@@ -35,6 +35,7 @@ input               输入文件路径（必需）
 --batch-size        批量大小（默认: 50）
 --max-retries       最大重试次数（默认: 3）
 --retry-delay       重试延迟秒数（默认: 1.0）
+--log               日志文件路径（可选）
 ```
 
 ## 配置文件 (config.env)
@@ -65,7 +66,7 @@ TRANSLATE_OUTPUT_DIR=~/translated_books
 
 ## 示例
 ```bash
-# 翻译为中文（默认）
+# 翻译单个文件
 python translate.py book.docx
 
 # 翻译为日语
@@ -76,6 +77,20 @@ python translate.py book.docx --api-keys "key1,key2,key3"
 
 # 断点续传
 python translate.py book.epub --resume
+
+# 批量翻译目录中所有 docx
+python translate.py /path/to/books/
+
+# 使用通配符批量翻译
+python translate.py "*.docx"
+
+# 带日志翻译
+python translate.py book.docx --log translate.log
+
+# 支持的格式（自动转换为 EPUB）
+python translate.py book.mobi
+python translate.py book.azw3
+python translate.py book.pdf
 ```
 
 ## 文件结构
@@ -83,8 +98,25 @@ python translate.py book.epub --resume
 - `translator.py` - 翻译核心逻辑，API 调用，Key 轮换，Token 统计
 - `docx_handler.py` - DOCX 处理，保留格式
 - `epub_handler.py` - EPUB 处理，保留 HTML 结构
+- `converter.py` - 格式转换（MOBI/AZW3/PDF → EPUB）
 - `config.env.example` - 配置文件模板
 - `requirements.txt` - Python 依赖
 
 ## 依赖
-python-docx, ebooklib, beautifulsoup4, openai
+
+### Python 包
+```bash
+pip install -r requirements.txt
+```
+
+### 系统包（格式转换需要）
+```bash
+# Fedora/RHEL
+sudo dnf install calibre poppler-utils
+
+# Ubuntu/Debian
+sudo apt install calibre poppler-utils
+
+# macOS
+brew install calibre poppler
+```
