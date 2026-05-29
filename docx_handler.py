@@ -67,11 +67,12 @@ def translate_docx(input_path: str, output_path: str, client, model: str,
 
     # 批量翻译
     texts = [t[1] for t in all_texts]
-    translated_texts = translate_batch(client, texts, model, batch_size,
+    translated_texts = translate_batch(client, texts, model,
+                                       target_lang=target_lang,
+                                       batch_size=batch_size,
                                        max_tokens=max_tokens,
                                        output_path=output_path, resume=resume,
                                        token_stats=token_stats,
-                                       target_lang=target_lang,
                                        key_manager=key_manager, cache=cache)
 
     # 创建新文档并填充内容

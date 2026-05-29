@@ -299,12 +299,21 @@ def get_progress_path(output_path: str) -> str:
     return output_path + ".progress.json"
 
 
-def save_progress(output_path: str, results: Dict[int, str], total: int):
+def save_progress(output_path: str, results, total: int):
     """保存翻译进度"""
     progress_path = get_progress_path(output_path)
+
+    # 支持列表和字典两种格式
+    if isinstance(results, dict):
+        completed = {str(k): v for k, v in results.items() if v is not None}
+    elif isinstance(results, list):
+        completed = {str(i): v for i, v in enumerate(results) if v is not None}
+    else:
+        completed = {}
+
     data = {
         "total": total,
-        "completed": {str(k): v for k, v in results.items() if v is not None}
+        "completed": completed
     }
     with open(progress_path, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
