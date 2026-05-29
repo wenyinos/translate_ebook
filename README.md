@@ -1,75 +1,87 @@
-# 电子书翻译脚本
+# Ebook Translator
 
-使用 OpenAI 兼容端点将英文技术文档翻译为简体中文。支持 .docx 和 .epub 格式。
+Translate English technical documents to Simplified Chinese using OpenAI-compatible endpoints. Supports .docx and .epub formats.
 
-## 快速开始
+## Features
 
-### 1. 一键设置环境
+- **DOCX Translation**: Preserve paragraph structure and inline formatting
+- **EPUB Translation**: Maintain original HTML structure
+- **Parallel Processing**: Multi-threaded translation for faster execution
+- **Resume Support**: Continue from where you left off if interrupted
+- **Token Statistics**: Track API usage and estimated costs
+
+## Quick Start
+
+### 1. Setup Environment
 ```bash
 ./setup_venv.sh
 ```
 
-### 2. 配置 API Key
-编辑 `config.env` 文件：
+### 2. Configure API Key
+Edit `config.env`:
 ```bash
 nano config.env
 ```
 
-填入你的 API Key：
+Add your API credentials:
 ```
 OPENAI_API_KEY=your_api_key_here
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=gpt-4o-mini
 ```
 
-### 3. 运行翻译
+### 3. Run Translation
 ```bash
-# 使用快捷脚本（自动激活虚拟环境）
+# Using the shortcut script (auto-activates venv)
 ./run.sh book.docx
 
-# 或手动激活虚拟环境后运行
+# Or manually activate and run
 source venv/bin/activate
 python translate.py book.docx
 ```
 
-## 使用方法
+## Usage
 
-### 基本用法
+### Basic Usage
 ```bash
-python translate.py <输入文件> [-o <输出路径>]
+python translate.py <input_file> [-o <output_path>]
 ```
 
-### 示例
+### Examples
 ```bash
-# 翻译 DOCX 文件
+# Translate DOCX file
 python translate.py document.docx
 
-# 翻译 EPUB 文件并指定输出路径
+# Translate EPUB with custom output path
 python translate.py book.epub -o translated_book.epub
 
-# 使用自定义配置
+# Resume interrupted translation
+python translate.py book.docx --resume
+
+# Use custom configuration
 python translate.py document.docx \
     --api-key "your_key" \
     --model "gpt-4o" \
     --batch-size 100
 ```
 
-### 命令行参数
-| 参数 | 说明 | 默认值 |
-|------|------|--------|
-| `input` | 输入文件路径 | 必需 |
-| `-o, --output` | 输出文件路径 | 自动生成 |
-| `--output-dir` | 输出目录 | `~/translated_books` |
-| `--api-key` | OpenAI API Key | 从环境变量读取 |
-| `--base-url` | API 基础 URL | `https://api.openai.com/v1` |
-| `--model` | 模型名称 | `gpt-4o-mini` |
-| `--batch-size` | 批量翻译大小 | `50` |
-| `--max-retries` | 最大重试次数 | `3` |
-| `--retry-delay` | 重试延迟（秒） | `1.0` |
+### Command Line Options
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `input` | Input file path | Required |
+| `-o, --output` | Output file path | Auto-generated |
+| `--output-dir` | Output directory | `~/translated_books` |
+| `--resume` | Resume from last checkpoint | `false` |
+| `--api-key` | OpenAI API Key | From environment |
+| `--base-url` | API base URL | `https://api.openai.com/v1` |
+| `--model` | Model name | `gpt-4o-mini` |
+| `--batch-size` | Batch size for translation | `50` |
+| `--max-retries` | Maximum retry attempts | `3` |
+| `--retry-delay` | Retry delay (seconds) | `1.0` |
 
-## 配置说明
+## Configuration
 
-### 环境变量
+### Environment Variables
 ```bash
 export OPENAI_API_KEY="your_api_key"
 export OPENAI_BASE_URL="https://api.openai.com/v1"
@@ -80,35 +92,41 @@ export TRANSLATE_RETRY_DELAY=1.0
 export TRANSLATE_OUTPUT_DIR=~/translated_books
 ```
 
-### 配置文件
-复制 `config.env.example` 为 `config.env` 并填入实际配置。
+### Config File
+Copy `config.env.example` to `config.env` and fill in your settings.
 
-## 依赖
+## Dependencies
 - Python 3.8+
-- python-docx: DOCX 文件处理
-- ebooklib: EPUB 文件处理
-- beautifulsoup4: HTML 解析
-- openai: OpenAI API 客户端
+- python-docx: DOCX file handling
+- ebooklib: EPUB file handling
+- beautifulsoup4: HTML parsing
+- openai: OpenAI API client
 
-安装依赖：
+Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-## 项目结构
+## Project Structure
 ```
 translate_ebook/
-├── translate.py          # 主程序
-├── setup_venv.sh         # 虚拟环境设置脚本
-├── run.sh               # 快捷运行脚本
-├── requirements.txt     # Python 依赖
-├── config.env          # 配置文件（不提交到 Git）
-├── config.env.example  # 配置文件示例
-└── CLAUDE.md           # Claude Code 指南
+├── translate.py          # CLI entry point
+├── translator.py         # Core translation logic
+├── docx_handler.py       # DOCX file processing
+├── epub_handler.py       # EPUB file processing
+├── setup_venv.sh         # Virtual environment setup
+├── run.sh                # Quick run script
+├── requirements.txt      # Python dependencies
+├── config.env            # Configuration (not in Git)
+├── config.env.example    # Configuration template
+├── CLAUDE.md             # Claude Code guidelines
+├── README.md             # English documentation
+└── README_zh.md          # Chinese documentation
 ```
 
-## 注意事项
-1. 确保有足够的 API 额度
-2. 大文件翻译可能需要较长时间
-3. 翻译结果保存在 `~/MyWork/Books/chinese/` 目录下
-4. 技术术语会尽量保留原文或使用通用译法
+## Notes
+1. Ensure sufficient API quota
+2. Large files may take a while to translate
+3. Output is saved to `~/translated_books` by default
+4. Technical terms are preserved or use common translations
+5. Progress files (`.progress.json`) are created during translation and removed on completion
