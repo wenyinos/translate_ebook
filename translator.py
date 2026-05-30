@@ -417,8 +417,8 @@ def translate_batch(client: openai.OpenAI, texts: List[str], model: str,
         for future in as_completed(futures):
             future.result()
 
-    # 保存最终进度
+    # 保存最终进度（不删除，由上层统一管理）
     if output_path:
-        clear_progress(output_path)
+        save_progress(output_path, results, total)
 
     return results

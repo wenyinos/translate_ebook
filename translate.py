@@ -15,7 +15,7 @@ from typing import List
 
 import openai
 
-from translator import TokenStats, KeyManager, TranslationCache, SUPPORTED_LANGUAGES, DEFAULT_TARGET_LANG
+from translator import TokenStats, KeyManager, TranslationCache, SUPPORTED_LANGUAGES, DEFAULT_TARGET_LANG, load_progress, clear_progress
 from docx_handler import translate_docx
 from epub_handler import translate_epub
 from converter import convert_to_epub, CONVERTIBLE_FORMATS
@@ -204,6 +204,13 @@ def translate_single_file(input_path: str, output_path: str, client,
             file_ext = '.epub'
             logger.info(f"Conversion complete: {temp_epub}")
 
+        # 检查输出文件是否已存在且无进度文件（说明已完整翻译）
+        if os.path.exists(output_path) and args.resume:
+            progress = load_progress(output_path)
+            if progress is None:
+                logger.info(f"Skipping (already translated): {output_path}")
+                return True
+
         if file_ext == '.docx':
             translate_docx(
                 input_path, output_path, client,
@@ -366,6 +373,26 @@ def main():
         logger.info(f"Cache: {cache.size} translations")
     logger.info(f"{token_stats.summary()}")
     logger.info(f"End: {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
+
+    # 所有文件翻译成功后，清除进度文件
+    if success_count == len(input_files) and args.resume:
+        logger.info("All files translated successfully, clearing progress files...")
+        for input_path in input_files:
+            # 重新计算输出路径
+            if args.output and len(input_files) == 1:
+                output_path = args.output
+            else:
+                input_name = Path(input_path).name
+                lang_dir = Path(config["output_dir"]) / config["target_lang"]
+                output_path = str(lang_dir / input_name)
+            
+            # 对于可转换格式，输出路径是 .epub
+            file_ext = Path(input_path).suffix.lower()
+            if file_ext in CONVERTIBLE_FORMATS:
+                output_path = str(Path(output_path).with_suffix('.epub'))
+            
+            clear_progress(output_path)
+        logger.info("Progress files cleared.")
 
 
 if __name__ == "__main__":
