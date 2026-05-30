@@ -200,6 +200,7 @@ def translate_single_file(input_path: str, output_path: str, client,
             temp_epub = str(Path(output_path).with_suffix('.epub'))
             convert_to_epub(input_path, temp_epub)
             input_path = temp_epub
+            output_path = temp_epub  # 更新输出路径为 EPUB
             file_ext = '.epub'
             logger.info(f"Conversion complete: {temp_epub}")
 

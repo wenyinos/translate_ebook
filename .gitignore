@@ -32,3 +32,4 @@ Thumbs.db
 *.log
 translated_books/
 cache/
+AGENTS.md
